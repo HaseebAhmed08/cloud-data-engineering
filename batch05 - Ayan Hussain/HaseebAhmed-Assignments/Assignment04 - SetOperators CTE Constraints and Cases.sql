@@ -29,6 +29,10 @@ as full_name FROM sales.customers
 -- a store location AND customers living there.
 -- Find those states.
 
+select state from sales.stores
+Intersect
+select state from sales.customers
+
 
 
 -- Q3.
@@ -37,7 +41,14 @@ as full_name FROM sales.customers
 -- Find the store_ids that appear in sales.stores but did NOT
 -- receive any orders in 2018.
 
+SELECT store_id
+FROM sales.stores
 
+EXCEPT
+
+SELECT store_id
+FROM sales.orders
+WHERE YEAR(order_date) = 2018;
 
 -- ============================================================
 --  SECTION B — CTEs
@@ -50,6 +61,21 @@ as full_name FROM sales.customers
 -- Show category_id, product_name, list_price, and the category average.
 
 
+WITH category_avg AS (
+    SELECT category_id,
+           AVG(list_price) AS avg_price
+    FROM production.products
+    GROUP BY category_id
+)
+
+SELECT p.category_id,
+       p.product_name,
+       p.list_price,
+       c.avg_price
+FROM production.products p
+JOIN category_avg c
+ON p.category_id = c.category_id
+WHERE p.list_price > c.avg_price;
 
 -- Q5.
 -- HR wants to reward the hardest-working staff member.
@@ -58,6 +84,22 @@ as full_name FROM sales.customers
 -- Show staff_id and their order_count.
 
 
+WITH staff_orders AS (
+    SELECT staff_id,
+           COUNT(*) AS order_count
+    FROM sales.orders
+    GROUP BY staff_id
+),
+avg_orders AS (
+    SELECT AVG(order_count) AS avg_count
+    FROM staff_orders
+)
+
+SELECT s.staff_id, s.order_count
+FROM staff_orders s
+CROSS JOIN avg_orders a
+WHERE s.order_count > a.avg_count;
+
 
 -- Q6.
 -- The finance team needs a yearly performance report per store.
@@ -65,6 +107,24 @@ as full_name FROM sales.customers
 -- Then find only the years where a store's revenue
 -- exceeded $1,000,000.
 -- Show store_id, year, and total_revenue.
+
+
+
+WITH yearly_sales AS (
+    SELECT s.store_id,
+           YEAR(o.order_date) AS yr,
+           SUM(oi.quantity * oi.list_price * (1 - oi.discount)) AS revenue
+    FROM sales.orders o
+    JOIN sales.order_items oi ON o.order_id = oi.order_id
+    JOIN sales.stores s ON s.store_id = o.store_id
+    GROUP BY s.store_id, YEAR(o.order_date)
+)
+
+SELECT *
+FROM yearly_sales
+WHERE revenue > 1000000;
+
+
 
 
 
@@ -105,6 +165,24 @@ as full_name FROM sales.customers
 
 
 
+CREATE TABLE sales.loyalty_cards (
+    card_number INT PRIMARY KEY,
+    
+    customer_id INT,
+    CONSTRAINT fk_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES sales.customers(customer_id)
+    ON DELETE CASCADE,
+
+    points INT CHECK (points >= 0),
+
+    tier VARCHAR(10) CHECK (tier IN ('Bronze','Silver','Gold')),
+
+    join_date DATE NOT NULL
+);
+
+
+
 -- Q8.
 -- The operations team realized that some orders in the database have
 -- a shipped_date that is earlier than the order_date, which is impossible.
@@ -130,6 +208,12 @@ as full_name FROM sales.customers
 
 
 
+ALTER TABLE test_orders
+ADD CONSTRAINT chk_shipping_date
+CHECK (shipped_date >= order_date OR shipped_date IS NULL);
+
+
+
 -- ============================================================
 --  SECTION D — CASE EXPRESSIONS
 -- ============================================================
@@ -145,6 +229,20 @@ as full_name FROM sales.customers
 
 
 
+SELECT order_id,
+       order_date,
+       shipped_date,
+       CASE
+            WHEN shipped_date IS NULL THEN 'Pending'
+            WHEN DATEDIFF(DAY, order_date, shipped_date) <= 2 THEN 'Fast'
+            WHEN DATEDIFF(DAY, order_date, shipped_date) BETWEEN 3 AND 5 THEN 'Normal'
+            ELSE 'Delayed'
+       END AS shipping_speed
+FROM sales.orders;
+
+
+
+
 -- Q10.
 -- The warehouse team wants to label stock levels for each product per store.
 -- Using production.stocks:
@@ -154,6 +252,20 @@ as full_name FROM sales.customers
 --   - 'Well Stocked'  — quantity above 50
 -- Show store_id, product_id, quantity, and stock_status.
 -- Sort by store_id, then quantity ascending.
+
+
+
+SELECT store_id,
+       product_id,
+       quantity,
+       CASE
+            WHEN quantity = 0 THEN 'Out of Stock'
+            WHEN quantity BETWEEN 1 AND 10 THEN 'Low Stock'
+            WHEN quantity BETWEEN 11 AND 50 THEN 'Sufficient'
+            ELSE 'Well Stocked'
+       END AS stock_status
+FROM production.stocks
+ORDER BY store_id, quantity;
 
 
 
